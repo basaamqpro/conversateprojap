@@ -225,6 +225,12 @@
           placeholder="Write one sentence…"
         ></textarea>
 
+        <div id="dictionaryTray" class="dictionary_tray" hidden>
+          <div id="dictionaryWords" class="dictionary_words" aria-label="Words in the input"></div>
+          <div id="dictionaryCategories" class="dictionary_categories" aria-label="Matching Japanese dictionary categories"></div>
+          <div id="dictionaryVocabulary" class="dictionary_vocabulary" aria-live="polite"></div>
+        </div>
+
         <div class="composer_footer">
           <p id="composerHint" class="composer_hint">
             English, Japanese, romaji, and approximate pronunciation are accepted.
@@ -246,6 +252,7 @@
 
   </div>
 
+  <script src="js/dictionary.js"></script>
   <script src="js/model.js"></script>
   <script src="js/ai.js"></script>
   <script src="js/sentence.js"></script>
@@ -254,6 +261,437 @@
 
 
   
+
+
+  <script>
+    (function () {
+      "use strict";
+
+      const input = document.getElementById("sentenceInput");
+      const tray = document.getElementById("dictionaryTray");
+      const wordsBox = document.getElementById("dictionaryWords");
+      const categoriesBox = document.getElementById("dictionaryCategories");
+      const vocabularyBox = document.getElementById("dictionaryVocabulary");
+
+      if (!input || !tray || !wordsBox || !categoriesBox || !vocabularyBox) {
+        return;
+      }
+
+      let selectedWordIndex = null;
+      let selectedWordMode = "english";
+      let currentMatches = [];
+      let breakdownContext = null;
+
+      function triplet(en, ja, tr) {
+        const english = String(en || "").trim();
+        const japanese = String(ja || "").trim();
+        const transliteration = String(tr || "").trim();
+
+        if (!english && !japanese) return null;
+
+        return { en: english, ja: japanese, tr: transliteration };
+      }
+
+      function pairTriplet(pair, index, enKey, jaKey, trKey) {
+        const value = Array.isArray(pair) ? pair[index] : null;
+        if (!value) return null;
+        return triplet(value[enKey], value[jaKey], value[trKey]);
+      }
+
+      const categories = [
+        {
+          key: "action", label: "Action", getData: () => globalThis.a_action || [],
+          views: [
+            { key: "base", read: item => item?.base_verb ? triplet(item.base_verb.en, item.base_verb.ja, item.base_verb.ja_tr) : null },
+            { key: "third", read: item => item?.third_person_singular ? triplet(item.third_person_singular.en, item.third_person_singular.ja, item.third_person_singular.ja_tr) : null },
+            { key: "present", read: item => item?.present_participle ? triplet(item.present_participle.en, item.present_participle.ja, item.present_participle.ja_tr) : null },
+            { key: "past", read: item => item?.past_tense ? triplet(item.past_tense.en, item.past_tense.ja, item.past_tense.ja_tr) : null }
+          ]
+        },
+        {
+          key: "object", label: "Object", getData: () => globalThis.b_object || [],
+          views: [
+            { key: "singular", read: item => pairTriplet(item, 0, "en_singular", "ja_singular", "ja_tr_singular") },
+            { key: "plural", read: item => pairTriplet(item, 1, "en_plural", "ja_plural", "ja_tr_plural") }
+          ]
+        },
+        {
+          key: "career", label: "Career", getData: () => globalThis.c_career || [],
+          views: [
+            { key: "singular", read: item => pairTriplet(item, 0, "en_singular_career", "jp_singular", "jp_tr_singular") },
+            { key: "plural", read: item => pairTriplet(item, 1, "en_plural_career", "jp_plural", "jp_tr_plural") }
+          ]
+        },
+        {
+          key: "environment", label: "Environment", getData: () => globalThis.d_environment || [],
+          views: [
+            { key: "singular", read: item => pairTriplet(item, 0, "en_singular_environment", "ja_singular", "ja_tr_singular") },
+            { key: "plural", read: item => pairTriplet(item, 1, "en_plural_environment", "ja_plural", "ja_tr_plural") }
+          ]
+        },
+        {
+          key: "position", label: "Position", getData: () => globalThis.e_position || [],
+          views: [{ key: "main", read: item => triplet(item?.en_position, item?.ja, item?.ja_tr) }]
+        },
+        {
+          key: "time", label: "Time", getData: () => globalThis.f_time || [],
+          views: [{ key: "main", read: item => triplet(item?.en_time, item?.ja, item?.ja_tr) }]
+        },
+        {
+          key: "stuff", label: "Stuff", getData: () => globalThis.g_stuff || [],
+          views: [
+            { key: "singular", read: item => pairTriplet(item, 0, "en_singular_stuff", "ja_singular", "ja_tr_singular") },
+            { key: "plural", read: item => pairTriplet(item, 1, "en_plural_stuff", "ja_plural", "ja_tr_plural") }
+          ]
+        },
+        {
+          key: "description", label: "Description", getData: () => globalThis.h_description || [],
+          views: [
+            { key: "adjective", read: item => pairTriplet(item, 0, "en_adjective", "ja_adjective", "ja_tr_adjective") },
+            { key: "adverb", read: item => pairTriplet(item, 1, "en_adverb", "ja_adverb", "ja_tr_adverb") }
+          ]
+        },
+        {
+          key: "animal", label: "Animal", getData: () => globalThis.i_animal || [],
+          views: [
+            { key: "animal", read: item => pairTriplet(item, 0, "en_animal", "ja_animal", "ja_tr_animal") },
+            { key: "related", read: item => pairTriplet(item, 1, "en_possessive", "ja_possessive", "ja_tr_possessive") }
+          ]
+        },
+        {
+          key: "body", label: "Body", getData: () => globalThis.j_body || [],
+          views: [
+            { key: "singular", read: item => pairTriplet(item, 0, "en_singular_body", "ja_singular_body", "ja_tr_singular") },
+            { key: "plural", read: item => pairTriplet(item, 1, "en_plural_body", "ja_plural_body", "ja_tr_plural") }
+          ]
+        },
+        {
+          key: "clothing", label: "Clothing", getData: () => globalThis.k_clothing || [],
+          views: [
+            { key: "singular", read: item => pairTriplet(item, 0, "en_singular_clothing", "ja_singular", "ja_tr_singular") },
+            { key: "plural", read: item => pairTriplet(item, 1, "en_plural_clothing", "ja_plural", "ja_tr_plural") },
+            { key: "possessive", read: item => pairTriplet(item, 2, "en_possessive", "ja_possessive", "ja_tr_possessive") }
+          ]
+        },
+        {
+          key: "feeling", label: "Feeling", getData: () => globalThis.l_feeling || [],
+          views: [
+            { key: "word", read: item => pairTriplet(item, 0, "en_feel_word", "ja_feel_word", "ja_tr_feel_word") },
+            { key: "present", read: item => pairTriplet(item, 1, "en_feel_present", "ja_feel_present", "ja_tr_feel_present") }
+          ]
+        },
+        {
+          key: "food", label: "Food", getData: () => globalThis.m_food || [],
+          views: [
+            { key: "singular", read: item => pairTriplet(item, 0, "en_singular_food", "ja_singular", "ja_tr_singular") },
+            { key: "plural", read: item => pairTriplet(item, 1, "en_plural_food", "ja_plural", "ja_tr_plural") }
+          ]
+        },
+        {
+          key: "personal", label: "Personal", getData: () => globalThis.n_personal || [],
+          views: [{ key: "main", read: item => triplet(item?.en_communication, item?.ja, item?.ja_tr) }]
+        },
+        {
+          key: "common", label: "Common", getData: () => globalThis.o_sentence || [],
+          views: [{ key: "main", read: item => triplet(item?.en_word, item?.ja_word, item?.ja_word_tr) }]
+        },
+        {
+          key: "transportation", label: "Transportation", getData: () => globalThis.p_transportation || [],
+          views: [
+            { key: "singular", read: item => pairTriplet(item, 0, "en_singular_transportation", "ja_singular", "ja_tr_singular") },
+            { key: "plural", read: item => pairTriplet(item, 1, "en_plural_transportation", "ja_plural", "ja_tr_plural") }
+          ]
+        },
+        {
+          key: "pronoun", label: "Pronoun", getData: () => globalThis.q_pronoun || [],
+          views: [{ key: "main", read: item => triplet(item?.en_pronoun, item?.ja_pronoun, item?.ja_tr_pronoun) }]
+        }
+      ];
+
+      function isJapanese(text) {
+        return /[\u3040-\u30ff\u3400-\u4dbf\u4e00-\u9fff\uf900-\ufaff]/.test(String(text || ""));
+      }
+
+      function cleanEdge(text) {
+        return String(text || "")
+          .replace(/^[\s.,!?;:()\[\]{}「」『』【】〈〉《》“”'…。、！？]+|[\s.,!?;:()\[\]{}「」『』【】〈〉《》“”'…。、！？]+$/g, "");
+      }
+
+      function normalize(text) {
+        return cleanEdge(text)
+          .normalize("NFKC")
+          .toLocaleLowerCase("en")
+          .trim();
+      }
+
+      function valueMatches(value, needle) {
+        if (!value) return false;
+        return String(value).split(/\s*\/\s*/).some(part => normalize(part) === needle);
+      }
+
+      function getWords() {
+        return String(input.value || "").split(/\s+/).filter(Boolean);
+      }
+
+      function findMatches(rawWord) {
+        const needle = normalize(rawWord);
+        if (!needle) return [];
+
+        const matches = [];
+
+        categories.forEach(category => {
+          category.views.forEach(view => {
+            const matched = category.getData().some(item => {
+              const vocab = view.read(item);
+              return vocab && (
+                valueMatches(vocab.en, needle) ||
+                valueMatches(vocab.ja, needle) ||
+                valueMatches(vocab.tr, needle)
+              );
+            });
+
+            if (matched) matches.push({ category, view });
+          });
+        });
+
+        const seen = new Set();
+        return matches.filter(match => {
+          const id = match.category.key + ":" + match.view.key;
+          if (seen.has(id)) return false;
+          seen.add(id);
+          return true;
+        });
+      }
+
+      function clearDictionaryDetails() {
+        categoriesBox.innerHTML = "";
+        vocabularyBox.innerHTML = "";
+        currentMatches = [];
+      }
+
+      function detectWordMode(word) {
+        const cleaned = cleanEdge(word);
+        if (isJapanese(cleaned)) return "japanese";
+
+        const needle = normalize(cleaned);
+        let matchesEnglish = false;
+        let matchesRomaji = false;
+
+        categories.forEach(category => {
+          category.views.forEach(view => {
+            category.getData().some(item => {
+              const vocab = view.read(item);
+              if (!vocab) return false;
+              if (valueMatches(vocab.en, needle)) matchesEnglish = true;
+              if (valueMatches(vocab.tr, needle)) matchesRomaji = true;
+              return matchesEnglish && matchesRomaji;
+            });
+          });
+        });
+
+        return matchesRomaji && !matchesEnglish ? "romaji" : "english";
+      }
+
+      function renderWords() {
+        if (breakdownContext) return;
+
+        const words = getWords();
+        wordsBox.innerHTML = "";
+        clearDictionaryDetails();
+
+        if (!words.length) {
+          tray.hidden = true;
+          selectedWordIndex = null;
+          return;
+        }
+
+        tray.hidden = false;
+
+        words.forEach((word, index) => {
+          const button = document.createElement("button");
+          button.type = "button";
+          button.className = "dictionary_word_button";
+          button.textContent = word;
+
+          button.addEventListener("click", function () {
+            selectedWordIndex = index;
+            selectedWordMode = detectWordMode(word);
+
+            wordsBox.querySelectorAll("button").forEach(item => item.classList.remove("active"));
+            button.classList.add("active");
+            renderCategoryChoices(word);
+          });
+
+          wordsBox.appendChild(button);
+        });
+      }
+
+      function renderCategoryChoices(word) {
+        categoriesBox.innerHTML = "";
+        vocabularyBox.innerHTML = "";
+        currentMatches = findMatches(word);
+
+        if (!currentMatches.length) {
+          const empty = document.createElement("span");
+          empty.className = "dictionary_empty";
+          empty.textContent = "No dictionary category found for this word.";
+          categoriesBox.appendChild(empty);
+          return;
+        }
+
+        const byCategory = new Map();
+        currentMatches.forEach(match => {
+          if (!byCategory.has(match.category.key)) byCategory.set(match.category.key, match);
+        });
+
+        byCategory.forEach(match => {
+          const button = document.createElement("button");
+          button.type = "button";
+          button.className = "dictionary_category_button";
+          button.textContent = match.category.label;
+
+          button.addEventListener("click", function () {
+            categoriesBox.querySelectorAll("button").forEach(item => item.classList.remove("active"));
+            button.classList.add("active");
+
+            const exactMatch = currentMatches.find(item => item.category.key === match.category.key) || match;
+            renderVocabulary(exactMatch.category, exactMatch.view);
+          });
+
+          categoriesBox.appendChild(button);
+        });
+      }
+
+      function renderVocabulary(category, view) {
+        vocabularyBox.innerHTML = "";
+        const fragment = document.createDocumentFragment();
+        const seen = new Set();
+
+        category.getData().forEach(item => {
+          const vocab = view.read(item);
+          if (!vocab || (!vocab.en && !vocab.ja)) return;
+
+          const signature = vocab.en + "|" + vocab.ja;
+          if (seen.has(signature)) return;
+          seen.add(signature);
+
+          const card = document.createElement("button");
+          card.type = "button";
+          card.className = "dictionary_vocab_item";
+
+          const ja = document.createElement("span");
+          ja.className = "dictionary_vocab_ja";
+          ja.lang = "ja";
+          ja.textContent = vocab.ja;
+
+          const tr = document.createElement("span");
+          tr.className = "dictionary_vocab_tr";
+          tr.textContent = vocab.tr;
+
+          const en = document.createElement("span");
+          en.className = "dictionary_vocab_en";
+          en.textContent = vocab.en;
+
+          card.append(ja, tr, en);
+
+          card.addEventListener("click", async function () {
+            if (breakdownContext) {
+              const app = globalThis.ConversateApp;
+              if (!app || typeof app.replaceBreakdownSegment !== "function") return;
+
+              card.disabled = true;
+              try {
+                const updated = await app.replaceBreakdownSegment(
+                  Object.assign({}, breakdownContext),
+                  Object.assign({}, vocab)
+                );
+                if (updated) closeBreakdownDictionary();
+              } finally {
+                card.disabled = false;
+              }
+              return;
+            }
+
+            const replacement = selectedWordMode === "japanese"
+              ? vocab.ja
+              : selectedWordMode === "romaji"
+                ? vocab.tr
+                : vocab.en;
+
+            replaceSelectedWord(replacement);
+          });
+
+          fragment.appendChild(card);
+        });
+
+        vocabularyBox.appendChild(fragment);
+      }
+
+      function preserveEdgePunctuation(original, replacement) {
+        const match = String(original || "").match(/^([^\p{L}\p{N}]*)(.*?)([^\p{L}\p{N}]*)$/u);
+        if (!match) return replacement;
+        return match[1] + replacement + match[3];
+      }
+
+      function replaceSelectedWord(replacement) {
+        if (selectedWordIndex === null || !replacement) return;
+        const words = getWords();
+        if (!words[selectedWordIndex]) return;
+
+        words[selectedWordIndex] = preserveEdgePunctuation(words[selectedWordIndex], replacement);
+        input.value = words.join(" ");
+        input.dispatchEvent(new Event("input", { bubbles: true }));
+        input.focus();
+      }
+
+      function closeBreakdownDictionary() {
+        breakdownContext = null;
+        selectedWordIndex = null;
+        selectedWordMode = "english";
+        renderWords();
+      }
+
+      function openBreakdown(context) {
+        if (!context || !context.segment || !context.clickedText) return;
+
+        breakdownContext = Object.assign({}, context);
+        selectedWordIndex = null;
+        selectedWordMode = "english";
+
+        tray.hidden = false;
+        wordsBox.innerHTML = "";
+        categoriesBox.innerHTML = "";
+        vocabularyBox.innerHTML = "";
+
+        const selected = document.createElement("button");
+        selected.type = "button";
+        selected.className = "dictionary_word_button active";
+        selected.textContent = context.clickedText;
+        selected.title = "Selected English breakdown word";
+        wordsBox.appendChild(selected);
+
+        renderCategoryChoices(context.clickedText);
+        tray.scrollIntoView({ behavior: "smooth", block: "nearest" });
+      }
+
+      globalThis.ConversateDictionaryUI = Object.freeze({
+        openBreakdown,
+        closeBreakdown: closeBreakdownDictionary
+      });
+
+      input.addEventListener("input", function () {
+        breakdownContext = null;
+        renderWords();
+      });
+
+      input.addEventListener("focus", function () {
+        breakdownContext = null;
+        renderWords();
+      });
+
+      renderWords();
+    })();
+  </script>
 
 
   <script>

@@ -285,7 +285,361 @@
   }
 
 
-  function createSegment(segment, index) {
+  function normalizeDictionaryText(text) {
+    return String(text || "")
+      .trim()
+      .normalize("NFKC")
+      .toLocaleLowerCase("en")
+      .replace(/[.!?,:;"'“”‘’()\[\]{}]/g, "")
+      .replace(/\s+/g, " ")
+      .trim();
+  }
+
+  function tokenizeEnglish(text) {
+    return String(text || "")
+      .trim()
+      .split(/\s+/)
+      .filter(Boolean);
+  }
+
+  function preserveWordPunctuation(original, replacement) {
+    const source = String(original || "");
+    let next = String(replacement || "").trim();
+
+    if (!next) return next;
+
+    const match = source.match(/^([^A-Za-z0-9]*)(.*?)([^A-Za-z0-9]*)$/);
+    if (!match) return next;
+
+    if (/^[A-Z]/.test(match[2] || "") && next) {
+      next = next.charAt(0).toUpperCase() + next.slice(1);
+    }
+
+    return match[1] + next + match[3];
+  }
+
+  function buildEditedEnglishText(segments, segmentIndex, wordIndex, replacement) {
+    const safeSegments = Array.isArray(segments) ? segments : [];
+    const nextWord = String(replacement || "").trim();
+
+    if (!nextWord) {
+      throw new Error("That dictionary item does not contain an English word.");
+    }
+
+    return safeSegments
+      .map(function (segment, index) {
+        const english = String(segment?.english || "").trim();
+
+        if (index !== segmentIndex) {
+          return english;
+        }
+
+        const words = tokenizeEnglish(english);
+
+        if (!words[wordIndex]) {
+          throw new Error("The selected English word could not be found.");
+        }
+
+        words[wordIndex] = preserveWordPunctuation(words[wordIndex], nextWord);
+        return words.join(" ");
+      })
+      .filter(Boolean)
+      .join(" ")
+      .trim();
+  }
+
+  function segmentMatchScore(a, b) {
+    if (!a || !b) return 0;
+
+    const aEn = normalizeDictionaryText(a.english);
+    const bEn = normalizeDictionaryText(b.english);
+
+    if (!aEn || !bEn) return 0;
+    if (aEn === bEn) return 8;
+    if (aEn.includes(bEn) || bEn.includes(aEn)) return 4;
+
+    return 0;
+  }
+
+  function findParagraphChildWord(paragraph, paragraphSegment, clickedWord, preferredWordIndex) {
+    const Paragraph = getParagraphController();
+    const children = Paragraph.getParagraphChildren(paragraph, state.sentences);
+    const needle = normalizeDictionaryText(clickedWord);
+    let best = null;
+
+    children.forEach(function (sentence) {
+      sentence.segments.forEach(function (segment, segmentIndex) {
+        const words = tokenizeEnglish(segment.english);
+
+        words.forEach(function (word, wordIndex) {
+          if (normalizeDictionaryText(word) !== needle) {
+            return;
+          }
+
+          let score = 10 + segmentMatchScore(paragraphSegment, segment);
+          if (wordIndex === preferredWordIndex) score += 1;
+
+          if (!best || score > best.score) {
+            best = {
+              sentence,
+              segmentIndex,
+              wordIndex,
+              score
+            };
+          }
+        });
+      });
+    });
+
+    return best;
+  }
+
+  function openBreakdownDictionary(button) {
+    const unitType = button.dataset.unitType;
+    const unitId = button.dataset.unitId;
+    const segmentIndex = Number(button.dataset.segmentIndex);
+    const wordIndex = Number(button.dataset.wordIndex);
+
+    let unit = null;
+
+    if (unitType === "sentence") {
+      unit = state.sentences.find(function (item) {
+        return item.id === unitId;
+      });
+    } else if (unitType === "paragraph") {
+      unit = state.paragraphs.find(function (item) {
+        return item.id === unitId;
+      });
+    }
+
+    const segment = unit?.segments?.[segmentIndex];
+
+    if (!unit || !segment || !Number.isInteger(wordIndex)) {
+      return;
+    }
+
+    if (
+      global.ConversateDictionaryUI &&
+      typeof global.ConversateDictionaryUI.openBreakdown === "function"
+    ) {
+      global.ConversateDictionaryUI.openBreakdown({
+        unitType,
+        unitId,
+        segmentIndex,
+        wordIndex,
+        clickedText: button.textContent || "",
+        segment: Object.assign({}, segment)
+      });
+    }
+  }
+
+  async function replaceBreakdownSegment(context, vocab) {
+    if (state.busy || !state.room) {
+      return false;
+    }
+
+    const Model = getModel();
+    const Sentence = getSentenceController();
+    const Paragraph = getParagraphController();
+    const Firebase = await getFirebase();
+    const segmentIndex = Number(context?.segmentIndex);
+    const wordIndex = Number(context?.wordIndex);
+    const replacement = String(vocab?.en || "").trim();
+    const controller = createController();
+
+    if (
+      !Number.isInteger(segmentIndex) || segmentIndex < 0 ||
+      !Number.isInteger(wordIndex) || wordIndex < 0
+    ) {
+      throw new Error("The selected English word could not be identified.");
+    }
+
+    if (!replacement) {
+      throw new Error("That dictionary item does not contain an English word.");
+    }
+
+    setBusy(true);
+    setStatus("Editing the sentence and rebuilding the Japanese breakdown…");
+
+    try {
+      if (context.unitType === "sentence") {
+        const existing = state.sentences.find(function (item) {
+          return item.id === context.unitId;
+        });
+
+        if (!existing) {
+          throw new Error("That sentence could not be found.");
+        }
+
+        const text = buildEditedEnglishText(
+          existing.segments,
+          segmentIndex,
+          wordIndex,
+          replacement
+        );
+
+        const result = await Sentence.updateManual(
+          existing,
+          {
+            direction: state.direction,
+            text,
+            allowGroupedEdit: Boolean(existing.paragraphId)
+          },
+          {
+            signal: controller.signal,
+            onStatus: function (message) {
+              if (message) setStatus(message);
+            }
+          }
+        );
+
+        if (result.valid !== true) {
+          throw new Error(result.message || "The updated sentence could not be processed.");
+        }
+
+        const saved = Model.createSentence(
+          await Firebase.saveSentence(state.room.id, result.sentence)
+        );
+
+        state.sentences = state.sentences.map(function (item) {
+          return item.id === saved.id ? saved : item;
+        });
+
+        setStatus("");
+        renderConversation();
+        return true;
+      }
+
+      if (context.unitType === "paragraph") {
+        const paragraph = Paragraph.getParagraphById(
+          state.paragraphs,
+          context.unitId
+        );
+
+        if (!paragraph) {
+          throw new Error("That paragraph could not be found.");
+        }
+
+        const paragraphSegment = paragraph.segments[segmentIndex];
+        const match = findParagraphChildWord(
+          paragraph,
+          paragraphSegment,
+          context.clickedText,
+          wordIndex
+        );
+
+        if (!match) {
+          throw new Error(
+            "That English word could not be found in the paragraph's original sentences."
+          );
+        }
+
+        const childText = buildEditedEnglishText(
+          match.sentence.segments,
+          match.segmentIndex,
+          match.wordIndex,
+          replacement
+        );
+
+        const childResult = await Sentence.updateManual(
+          match.sentence,
+          {
+            direction: state.direction,
+            text: childText,
+            allowGroupedEdit: true
+          },
+          {
+            signal: controller.signal,
+            onStatus: function (message) {
+              if (message) setStatus(message);
+            }
+          }
+        );
+
+        if (childResult.valid !== true) {
+          throw new Error(childResult.message || "The updated sentence could not be processed.");
+        }
+
+        const updatedChild = Model.createSentence(childResult.sentence);
+        const childIds = new Set(paragraph.sentenceIds);
+        const rebuiltChildren = Model.sortByOrder(
+          state.sentences
+            .filter(function (sentence) {
+              return childIds.has(sentence.id);
+            })
+            .map(function (sentence) {
+              return sentence.id === updatedChild.id
+                ? updatedChild
+                : sentence;
+            })
+        );
+
+        if (rebuiltChildren.length !== paragraph.sentenceIds.length) {
+          throw new Error("Some paragraph sentences could not be loaded.");
+        }
+
+        setStatus("Rebuilding the Japanese paragraph with the edited sentence…");
+
+        const linguistic = await global.ConversateAI.buildParagraph(
+          {
+            direction: state.direction,
+            sentences: rebuiltChildren
+          },
+          {
+            signal: controller.signal,
+            onStatus: function (message) {
+              if (message) setStatus(message);
+            }
+          }
+        );
+
+        const updatedParagraph = Model.createParagraph({
+          id: paragraph.id,
+          sentenceIds: paragraph.sentenceIds,
+          anchorOrder: paragraph.anchorOrder,
+          english: linguistic.english,
+          japanese: linguistic.japanese,
+          segments: linguistic.segments,
+          createdAt: paragraph.createdAt,
+          updatedAt: new Date().toISOString()
+        });
+
+        const savedPair = await Firebase.saveSentenceAndParagraph(
+          state.room.id,
+          updatedChild,
+          updatedParagraph
+        );
+
+        const savedSentence = Model.createSentence(savedPair.sentence);
+        const savedParagraph = Model.createParagraph(savedPair.paragraph);
+
+        state.sentences = state.sentences.map(function (item) {
+          return item.id === savedSentence.id ? savedSentence : item;
+        });
+
+        state.paragraphs = state.paragraphs.map(function (item) {
+          return item.id === savedParagraph.id ? savedParagraph : item;
+        });
+
+        setStatus("");
+        renderConversation();
+        return true;
+      }
+
+      throw new Error("Unsupported breakdown item.");
+    } catch (error) {
+      if (error?.name !== "AbortError") {
+        console.error(error);
+        setStatus(error?.message || "Could not update the selected word.", "error");
+      }
+      return false;
+    } finally {
+      finishController(controller);
+      setBusy(false);
+    }
+  }
+
+  function createSegment(segment, index, context) {
     const Model = getModel();
     const enJa = state.direction === Model.DIRECTIONS.EN_JA;
 
@@ -296,7 +650,7 @@
       SEGMENT_COLORS[index % SEGMENT_COLORS.length]
     );
 
-    function makeLine(className, text, japanese) {
+    function makePlainLine(className, text, japanese) {
       const line = document.createElement("span");
       line.className = "segment_line " + className;
       line.textContent = text || "\u00A0";
@@ -310,19 +664,53 @@
       return line;
     }
 
-    const pronunciation = makeLine(
+    function makeEnglishLine(className, text) {
+      const line = document.createElement("span");
+      line.className = "segment_line " + className + " segment_english_line";
+      line.dir = "ltr";
+
+      const words = tokenizeEnglish(text);
+
+      if (!words.length) {
+        line.textContent = "\u00A0";
+        return line;
+      }
+
+      words.forEach(function (word, wordIndex) {
+        if (wordIndex > 0) {
+          line.appendChild(document.createTextNode(" "));
+        }
+
+        const button = document.createElement("button");
+        button.type = "button";
+        button.className = "breakdown_english_word";
+        button.textContent = word;
+        button.dataset.dictionaryBreakdown = "true";
+        button.dataset.unitType = context.type;
+        button.dataset.unitId = context.id;
+        button.dataset.segmentIndex = String(index);
+        button.dataset.wordIndex = String(wordIndex);
+        button.title = "Show related Japanese dictionary words";
+
+        line.appendChild(button);
+      });
+
+      return line;
+    }
+
+    const pronunciation = makePlainLine(
       "segment_pronunciation",
       segment.transliteration,
       false
     );
 
     const target = enJa
-      ? makeLine("segment_target", segment.japanese, true)
-      : makeLine("segment_target", segment.english, false);
+      ? makePlainLine("segment_target", segment.japanese, true)
+      : makeEnglishLine("segment_target", segment.english);
 
     const source = enJa
-      ? makeLine("segment_source", segment.english, false)
-      : makeLine("segment_source", segment.japanese, true);
+      ? makeEnglishLine("segment_source", segment.english)
+      : makePlainLine("segment_source", segment.japanese, true);
 
     group.append(pronunciation, target, source);
     return group;
@@ -962,6 +1350,15 @@
   }
 
   function handleConversationClick(event) {
+    const dictionaryWord = event.target.closest(
+      "button[data-dictionary-breakdown=\"true\"]"
+    );
+
+    if (dictionaryWord) {
+      openBreakdownDictionary(dictionaryWord);
+      return;
+    }
+
     const button = event.target.closest("button[data-action]");
 
     if (!button) {
@@ -1111,6 +1508,7 @@
         busy: state.busy
       };
     },
-    render: renderConversation
+    render: renderConversation,
+    replaceBreakdownSegment
   });
 })(window);
