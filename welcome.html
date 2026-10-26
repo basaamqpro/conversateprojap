@@ -1,0 +1,494 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="description" content="Choose or create a ConversateProJapanese conversation room.">
+  <title>Conversations · ConversateProJapanese</title>
+  <link rel="stylesheet" href="css/welcome.css">
+</head>
+<body>
+  <main class="page_shell">
+    <header class="page_header">
+      <div class="brand">
+        <p class="brand_eyebrow">ConversateProJapanese</p>
+        <h1>Your conversations</h1>
+        <p class="brand_text">
+          Create a room, choose the learning direction, and build the conversation one sentence at a time.
+        </p>
+      </div>
+
+      <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;justify-content:flex-end;">
+        <span id="currentUserLabel" style="color:#667085;font-size:14px;font-weight:700;"></span>
+        <button id="logoutButton" class="secondary_button" type="button">Log out</button>
+        <button id="openCreateButton" class="primary_button" type="button">
+          <span aria-hidden="true">＋</span>
+          New conversation
+        </button>
+      </div>
+    </header>
+
+    <section id="createPanel" class="create_panel" hidden aria-labelledby="createTitle">
+      <div class="create_panel_head">
+        <div>
+          <p class="section_eyebrow">New room</p>
+          <h2 id="createTitle">Start a conversation</h2>
+        </div>
+
+        <button id="closeCreateButton" class="icon_button" type="button" aria-label="Close new conversation form">×</button>
+      </div>
+
+      <form id="createRoomForm" class="create_form">
+        <div class="field_group">
+          <label for="roomNameInput">Conversation name</label>
+          <input
+            id="roomNameInput"
+            name="roomName"
+            type="text"
+            maxlength="80"
+            autocomplete="off"
+            placeholder="e.g. Daily conversation"
+            required
+          >
+        </div>
+
+        <fieldset class="direction_fieldset">
+          <legend>Practice direction</legend>
+
+          <label class="direction_option selected">
+            <input type="radio" name="direction" value="en-ja" checked>
+            <span class="direction_copy">
+              <strong>English <span aria-hidden="true">→</span> Japanese</strong>
+              <small>Japanese is the learning target.</small>
+            </span>
+            <span class="direction_mark" aria-hidden="true">✓</span>
+          </label>
+
+          <label class="direction_option">
+            <input type="radio" name="direction" value="ja-en">
+            <span class="direction_copy">
+              <strong>Japanese <span aria-hidden="true">→</span> English</strong>
+              <small>English is the learning target.</small>
+            </span>
+            <span class="direction_mark" aria-hidden="true">✓</span>
+          </label>
+        </fieldset>
+
+        <p id="formMessage" class="form_message" role="status" aria-live="polite"></p>
+
+        <div class="form_actions">
+          <button id="cancelCreateButton" class="secondary_button" type="button">Cancel</button>
+          <button id="createRoomButton" class="primary_button" type="submit">Create conversation</button>
+        </div>
+      </form>
+    </section>
+
+    <section class="rooms_section" aria-labelledby="roomsTitle">
+      <div class="rooms_heading">
+        <div>
+          <p class="section_eyebrow">Rooms</p>
+          <h2 id="roomsTitle">Continue learning</h2>
+        </div>
+        <span id="roomCount" class="room_count">0 conversations</span>
+      </div>
+
+      <div id="roomsGrid" class="rooms_grid" aria-live="polite"></div>
+    </section>
+  </main>
+
+  <script src="js/model.js"></script>
+  <script type="module">
+    import {
+      createRoom as createFirebaseRoom,
+      getRooms as getFirebaseRooms,
+      deleteRoom as deleteFirebaseRoom,
+      setActiveRoom,
+      getCurrentUser,
+      getFreshCurrentUser,
+      logout
+    } from "./js/firebase.js";
+
+    const state = {
+      rooms: [],
+      busy: false
+    };
+
+    const el = {};
+
+    function cacheElements() {
+      el.openCreateButton = document.getElementById("openCreateButton");
+      el.createPanel = document.getElementById("createPanel");
+      el.closeCreateButton = document.getElementById("closeCreateButton");
+      el.cancelCreateButton = document.getElementById("cancelCreateButton");
+      el.createRoomForm = document.getElementById("createRoomForm");
+      el.createRoomButton = document.getElementById("createRoomButton");
+      el.roomNameInput = document.getElementById("roomNameInput");
+      el.formMessage = document.getElementById("formMessage");
+      el.roomsGrid = document.getElementById("roomsGrid");
+      el.roomCount = document.getElementById("roomCount");
+      el.logoutButton = document.getElementById("logoutButton");
+      el.currentUserLabel = document.getElementById("currentUserLabel");
+    }
+
+    function getModel() {
+      if (!window.ConversateModel) {
+        throw new Error("model.js must be loaded before welcome.html runs.");
+      }
+      return window.ConversateModel;
+    }
+
+    function directionLabel(direction) {
+      return direction === "ja-en"
+        ? "Japanese → English"
+        : "English → Japanese";
+    }
+
+    function targetLabel(direction) {
+      return direction === "ja-en"
+        ? "Target: English"
+        : "Target: Japanese";
+    }
+
+    function formatDate(value) {
+      const date = new Date(value);
+      if (Number.isNaN(date.getTime())) return "";
+
+      return new Intl.DateTimeFormat(undefined, {
+        month: "short",
+        day: "numeric",
+        year: date.getFullYear() !== new Date().getFullYear() ? "numeric" : undefined
+      }).format(date);
+    }
+
+    function setBusy(busy) {
+      state.busy = Boolean(busy);
+      el.openCreateButton.disabled = state.busy;
+      el.logoutButton.disabled = state.busy;
+      el.createRoomButton.disabled = state.busy;
+      el.closeCreateButton.disabled = state.busy;
+      el.cancelCreateButton.disabled = state.busy;
+    }
+
+    function setFormMessage(message, type = "") {
+      el.formMessage.textContent = message || "";
+      el.formMessage.className = "form_message" + (type ? " " + type : "");
+    }
+
+    function openCreatePanel() {
+      if (state.busy) return;
+
+      el.createPanel.hidden = false;
+      setFormMessage("");
+
+      requestAnimationFrame(function () {
+        el.roomNameInput.focus();
+        el.createPanel.scrollIntoView({ behavior: "smooth", block: "start" });
+      });
+    }
+
+    function closeCreatePanel() {
+      if (state.busy) return;
+
+      el.createPanel.hidden = true;
+      setFormMessage("");
+      el.createRoomForm.reset();
+
+      const firstRadio = el.createRoomForm.querySelector('input[value="en-ja"]');
+      if (firstRadio) firstRadio.checked = true;
+
+      syncDirectionCards();
+    }
+
+    function syncDirectionCards() {
+      document.querySelectorAll(".direction_option").forEach(function (option) {
+        const input = option.querySelector('input[type="radio"]');
+        option.classList.toggle("selected", Boolean(input && input.checked));
+      });
+    }
+
+    function createRoomCard(room) {
+      const card = document.createElement("article");
+      card.className = "room_card";
+      card.dataset.roomId = room.id;
+
+      const mainButton = document.createElement("button");
+      mainButton.type = "button";
+      mainButton.className = "room_open";
+      mainButton.dataset.action = "open";
+      mainButton.dataset.roomId = room.id;
+      mainButton.setAttribute("aria-label", "Open " + room.name);
+
+      const top = document.createElement("div");
+      top.className = "room_card_top";
+
+      const badge = document.createElement("span");
+      badge.className = "direction_badge";
+      badge.textContent = directionLabel(room.direction);
+
+      const arrow = document.createElement("span");
+      arrow.className = "room_arrow";
+      arrow.setAttribute("aria-hidden", "true");
+      arrow.textContent = "↗";
+
+      top.append(badge, arrow);
+
+      const name = document.createElement("h3");
+      name.textContent = room.name;
+
+      const target = document.createElement("p");
+      target.className = "room_target";
+      target.textContent = targetLabel(room.direction);
+
+      const footer = document.createElement("div");
+      footer.className = "room_footer";
+
+      const date = document.createElement("span");
+      date.textContent = room.updatedAt
+        ? "Updated " + formatDate(room.updatedAt)
+        : "Created " + formatDate(room.createdAt);
+
+      footer.appendChild(date);
+      mainButton.append(top, name, target, footer);
+
+      const deleteButton = document.createElement("button");
+      deleteButton.type = "button";
+      deleteButton.className = "room_delete";
+      deleteButton.dataset.action = "delete";
+      deleteButton.dataset.roomId = room.id;
+      deleteButton.setAttribute("aria-label", "Delete " + room.name);
+      deleteButton.textContent = "Delete";
+
+      card.append(mainButton, deleteButton);
+      return card;
+    }
+
+    function renderRooms() {
+      el.roomsGrid.innerHTML = "";
+      el.roomCount.textContent = state.rooms.length + (state.rooms.length === 1 ? " conversation" : " conversations");
+
+      if (!state.rooms.length) {
+        const empty = document.createElement("div");
+        empty.className = "rooms_empty";
+
+        const icon = document.createElement("div");
+        icon.className = "empty_icon";
+        icon.textContent = "ع";
+
+        const heading = document.createElement("h3");
+        heading.textContent = "No conversations yet";
+
+        const text = document.createElement("p");
+        text.textContent = "Create your first room and choose whether you want to practise English → Japanese or Japanese → English.";
+
+        const button = document.createElement("button");
+        button.type = "button";
+        button.className = "primary_button";
+        button.textContent = "Create first conversation";
+        button.addEventListener("click", openCreatePanel);
+
+        empty.append(icon, heading, text, button);
+        el.roomsGrid.appendChild(empty);
+        return;
+      }
+
+      state.rooms.forEach(function (room) {
+        el.roomsGrid.appendChild(createRoomCard(room));
+      });
+    }
+
+    function renderLoadError(message) {
+      el.roomsGrid.innerHTML = "";
+      el.roomCount.textContent = "";
+
+      const empty = document.createElement("div");
+      empty.className = "rooms_empty";
+
+      const heading = document.createElement("h3");
+      heading.textContent = "Could not load conversations";
+
+      const text = document.createElement("p");
+      text.textContent = message || "Check your Firebase connection and try again.";
+
+      const button = document.createElement("button");
+      button.type = "button";
+      button.className = "secondary_button";
+      button.textContent = "Try again";
+      button.addEventListener("click", loadRooms);
+
+      empty.append(heading, text, button);
+      el.roomsGrid.appendChild(empty);
+    }
+
+    async function loadRooms() {
+      if (state.busy) return;
+
+      setBusy(true);
+      el.roomsGrid.innerHTML = '<div class="rooms_empty"><p>Loading conversations…</p></div>';
+
+      try {
+        const Model = getModel();
+        const rooms = await getFirebaseRooms();
+
+        state.rooms = rooms
+          .filter(function (room) {
+            return room && room.id && Model.isDirection(room.direction);
+          })
+          .map(function (room) {
+            return Model.createRoom(room);
+          });
+
+        renderRooms();
+      } catch (error) {
+        console.error(error);
+        renderLoadError(error?.message || "Could not load conversations.");
+      } finally {
+        setBusy(false);
+      }
+    }
+
+    async function createRoom(event) {
+      event.preventDefault();
+      if (state.busy) return;
+
+      const Model = getModel();
+      const name = Model.cleanText(el.roomNameInput.value);
+      const directionInput = el.createRoomForm.querySelector('input[name="direction"]:checked');
+      const direction = directionInput ? directionInput.value : "en-ja";
+
+      if (!name) {
+        setFormMessage("Enter a conversation name.");
+        el.roomNameInput.focus();
+        return;
+      }
+
+      setBusy(true);
+      el.createRoomButton.textContent = "Creating…";
+      setFormMessage("Saving conversation…");
+
+      try {
+        const room = await createFirebaseRoom(name, direction);
+        setActiveRoom(room);
+        window.location.href = "index.html";
+      } catch (error) {
+        console.error(error);
+        setFormMessage(error?.message || "Could not create the conversation.", "error");
+      } finally {
+        el.createRoomButton.textContent = "Create conversation";
+        setBusy(false);
+      }
+    }
+
+    function openRoom(roomId) {
+      if (state.busy) return;
+
+      const room = state.rooms.find(function (item) {
+        return item.id === roomId;
+      });
+
+      if (!room) return;
+
+      setActiveRoom(room);
+      window.location.href = "index.html";
+    }
+
+    async function deleteRoom(roomId) {
+      if (state.busy) return;
+
+      const room = state.rooms.find(function (item) {
+        return item.id === roomId;
+      });
+
+      if (!room) return;
+
+      const confirmed = window.confirm('Delete "' + room.name + '" and its saved sentences?');
+      if (!confirmed) return;
+
+      setBusy(true);
+
+      try {
+        await deleteFirebaseRoom(roomId);
+        state.rooms = state.rooms.filter(function (item) {
+          return item.id !== roomId;
+        });
+        renderRooms();
+      } catch (error) {
+        console.error(error);
+        window.alert(error?.message || "Could not delete the conversation.");
+      } finally {
+        setBusy(false);
+      }
+    }
+
+    function handleRoomsClick(event) {
+      const button = event.target.closest("button[data-action]");
+      if (!button) return;
+
+      const roomId = button.dataset.roomId;
+
+      if (button.dataset.action === "open") {
+        openRoom(roomId);
+      }
+
+      if (button.dataset.action === "delete") {
+        deleteRoom(roomId);
+      }
+    }
+
+    function bindEvents() {
+      el.openCreateButton.addEventListener("click", openCreatePanel);
+      el.closeCreateButton.addEventListener("click", closeCreatePanel);
+      el.cancelCreateButton.addEventListener("click", closeCreatePanel);
+      el.createRoomForm.addEventListener("submit", createRoom);
+      el.roomsGrid.addEventListener("click", handleRoomsClick);
+
+      el.logoutButton.addEventListener("click", function () {
+        if (state.busy) return;
+        logout();
+        window.location.href = "loginregister.html";
+      });
+
+      document.querySelectorAll('input[name="direction"]').forEach(function (input) {
+        input.addEventListener("change", syncDirectionCards);
+      });
+
+      document.addEventListener("keydown", function (event) {
+        if (event.key === "Escape" && !el.createPanel.hidden) {
+          closeCreatePanel();
+        }
+      });
+    }
+
+    async function init() {
+      cacheElements();
+      getModel();
+
+      const localUser = getCurrentUser();
+      if (!localUser?.userId) {
+        window.location.replace("loginregister.html");
+        return;
+      }
+
+      el.currentUserLabel.textContent = localUser.username || localUser.name || "User";
+      bindEvents();
+      syncDirectionCards();
+
+      try {
+        const freshUser = await getFreshCurrentUser();
+
+        if (!freshUser?.userId) {
+          window.location.replace("loginregister.html");
+          return;
+        }
+
+        el.currentUserLabel.textContent = freshUser.username || freshUser.name || "User";
+        await loadRooms();
+      } catch (error) {
+        console.error(error);
+        renderLoadError(error?.message || "Could not verify your account.");
+      }
+    }
+
+    init();
+  </script>
+</body>
+</html>

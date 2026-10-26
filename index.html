@@ -1,4 +1,405 @@
-<html>
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="description" content="ConversateProJapanese — focused English and Japanese sentence practice.">
+  <title>ConversateProJapanese</title>
+  <link rel="stylesheet" href="css/app.css">
+</head>
+<body>
+  <div class="app_shell">
 
-<h1>Welcome to My Website</h1>
+    <header class="topbar">
+      <a class="back_link" href="welcome.html" aria-label="Back to conversations">
+        <span aria-hidden="true">‹</span>
+        Conversations
+      </a>
+
+      <div class="brand_block">
+        <p class="brand_eyebrow">ConversateProJapanese</p>
+        <h1 id="roomName">Japanese Conversation</h1>
+      </div>
+
+      <div class="topbar_tools">
+        <div class="direction_control" aria-label="Practice direction">
+          <button
+            id="directionEnJa"
+            class="direction_button active"
+            type="button"
+            data-direction="en-ja"
+            aria-pressed="true"
+          >
+            English <span aria-hidden="true">→</span> Japanese
+          </button>
+
+          <button
+            id="directionJaEn"
+            class="direction_button"
+            type="button"
+            data-direction="ja-en"
+            aria-pressed="false"
+          >
+            Japanese <span aria-hidden="true">→</span> English
+          </button>
+        </div>
+
+        <button
+          id="textSettingsButton"
+          class="text_settings_button"
+          type="button"
+          aria-haspopup="dialog"
+          aria-controls="textSettingsPanel"
+        >
+          <span aria-hidden="true">Aa</span>
+          Text
+        </button>
+      </div>
+    </header>
+
+
+
+    <div id="textSettingsPanel" class="text_settings_overlay" hidden>
+      <section
+        class="text_settings_panel"
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="textSettingsTitle"
+      >
+        <div class="text_settings_header">
+          <div>
+            <p class="text_settings_eyebrow">Display</p>
+            <h2 id="textSettingsTitle">Text settings</h2>
+          </div>
+
+          <button
+            id="closeTextSettings"
+            class="text_settings_close"
+            type="button"
+            aria-label="Close text settings"
+          >
+            ×
+          </button>
+        </div>
+
+        <p class="text_settings_help">
+          Move a slider and the conversation changes immediately.
+        </p>
+
+        <div class="text_settings_groups">
+          <section class="text_setting_group">
+            <div class="text_setting_title_row">
+              <h3>Translation</h3>
+            </div>
+
+            <label class="slider_label" for="translationSize">
+              <span>Size</span>
+              <output id="translationSizeValue">32 px</output>
+            </label>
+            <input id="translationSize" type="range" min="18" max="48" step="1" value="32">
+
+            <label class="slider_label" for="translationWeight">
+              <span>Weight</span>
+              <output id="translationWeightValue">800</output>
+            </label>
+            <input id="translationWeight" type="range" min="400" max="900" step="50" value="800">
+          </section>
+
+          <section class="text_setting_group">
+            <div class="text_setting_title_row">
+              <h3>Romaji</h3>
+            </div>
+
+            <label class="slider_label" for="transliterationSize">
+              <span>Size</span>
+              <output id="transliterationSizeValue">15 px</output>
+            </label>
+            <input id="transliterationSize" type="range" min="12" max="34" step="1" value="15">
+
+            <label class="slider_label" for="transliterationWeight">
+              <span>Weight</span>
+              <output id="transliterationWeightValue">850</output>
+            </label>
+            <input id="transliterationWeight" type="range" min="400" max="900" step="50" value="850">
+          </section>
+
+          <section class="text_setting_group">
+            <div class="text_setting_title_row">
+              <h3>Source</h3>
+            </div>
+
+            <label class="slider_label" for="sourceSize">
+              <span>Size</span>
+              <output id="sourceSizeValue">16 px</output>
+            </label>
+            <input id="sourceSize" type="range" min="12" max="36" step="1" value="16">
+
+            <label class="slider_label" for="sourceWeight">
+              <span>Weight</span>
+              <output id="sourceWeightValue">650</output>
+            </label>
+            <input id="sourceWeight" type="range" min="400" max="900" step="50" value="650">
+          </section>
+
+          <section class="text_setting_group">
+            <div class="text_setting_title_row">
+              <h3>Breakdown</h3>
+            </div>
+
+            <label class="slider_label" for="breakdownSize">
+              <span>Size</span>
+              <output id="breakdownSizeValue">18 px</output>
+            </label>
+            <input id="breakdownSize" type="range" min="12" max="36" step="1" value="18">
+
+            <label class="slider_label" for="breakdownWeight">
+              <span>Weight</span>
+              <output id="breakdownWeightValue">850</output>
+            </label>
+            <input id="breakdownWeight" type="range" min="400" max="900" step="50" value="850">
+          </section>
+        </div>
+
+        <div class="text_settings_footer">
+          <button id="resetTextSettings" class="text_settings_reset" type="button">
+            Reset
+          </button>
+          <button id="doneTextSettings" class="text_settings_done" type="button">
+            Done
+          </button>
+        </div>
+      </section>
+    </div>
+
+
+    <main class="conversation_layout">
+      <section
+        id="conversation"
+        class="conversation"
+        aria-live="polite"
+        aria-label="Conversation"
+      ></section>
+
+      <div id="status" class="status" role="status" aria-live="polite"></div>
+    </main>
+
+    <section class="composer_wrap" aria-label="Sentence composer">
+      <div class="composer">
+        <div class="composer_topline">
+          <div class="speaker_control" aria-label="Write as">
+            <span class="speaker_label">Write as</span>
+
+            <button
+              id="speakerUser"
+              class="speaker_button active"
+              type="button"
+              data-speaker="user"
+              aria-pressed="true"
+            >
+              You
+            </button>
+
+            <button
+              id="speakerPartner"
+              class="speaker_button"
+              type="button"
+              data-speaker="partner"
+              aria-pressed="false"
+            >
+              Partner
+            </button>
+          </div>
+
+          <button id="cancelEditButton" class="cancel_edit" type="button" hidden>
+            Cancel edit
+          </button>
+        </div>
+
+        <label class="sr_only" for="sentenceInput">Write one sentence</label>
+        <textarea
+          id="sentenceInput"
+          rows="2"
+          maxlength="800"
+          autocomplete="off"
+          spellcheck="true"
+          placeholder="Write one sentence…"
+        ></textarea>
+
+        <div class="composer_footer">
+          <p id="composerHint" class="composer_hint">
+            English, Japanese, romaji, and approximate pronunciation are accepted.
+          </p>
+
+          <div class="composer_actions">
+            <button id="aiButton" class="button secondary" type="button">
+              <span aria-hidden="true">✦</span>
+              AI next turn
+            </button>
+
+            <button id="sendButton" class="button primary" type="button">
+              Send
+            </button>
+          </div>
+        </div>
+      </div>
+    </section>
+
+  </div>
+
+  <script src="js/model.js"></script>
+  <script src="js/ai.js"></script>
+  <script src="js/sentence.js"></script>
+  <script src="js/paragraph.js"></script>
+  <script src="js/app.js"></script>
+
+
+  
+
+
+  <script>
+    (function () {
+      "use strict";
+
+      const STORAGE_KEY = "conversate_japanese_text_settings";
+
+      const defaults = {
+        translationSize: 32,
+        translationWeight: 800,
+        transliterationSize: 15,
+        transliterationWeight: 850,
+        sourceSize: 16,
+        sourceWeight: 650,
+        breakdownSize: 18,
+        breakdownWeight: 850
+      };
+
+      const cssVariables = {
+        translationSize: "--cp-translation-size",
+        translationWeight: "--cp-translation-weight",
+        transliterationSize: "--cp-transliteration-size",
+        transliterationWeight: "--cp-transliteration-weight",
+        sourceSize: "--cp-source-size",
+        sourceWeight: "--cp-source-weight",
+        breakdownSize: "--cp-breakdown-size",
+        breakdownWeight: "--cp-breakdown-weight"
+      };
+
+      const panel = document.getElementById("textSettingsPanel");
+      const openButton = document.getElementById("textSettingsButton");
+      const closeButton = document.getElementById("closeTextSettings");
+      const doneButton = document.getElementById("doneTextSettings");
+      const resetButton = document.getElementById("resetTextSettings");
+
+      if (!panel || !openButton || !closeButton || !doneButton || !resetButton) {
+        return;
+      }
+
+      function readSavedSettings() {
+        try {
+          const saved = JSON.parse(localStorage.getItem(STORAGE_KEY) || "{}");
+          return Object.assign({}, defaults, saved && typeof saved === "object" ? saved : {});
+        } catch (_) {
+          return Object.assign({}, defaults);
+        }
+      }
+
+      let settings = readSavedSettings();
+
+      function valueElement(key) {
+        return document.getElementById(key + "Value");
+      }
+
+      function sliderElement(key) {
+        return document.getElementById(key);
+      }
+
+      function formatValue(key, value) {
+        return key.endsWith("Size") ? value + " px" : String(value);
+      }
+
+      function applySetting(key, value) {
+        const numeric = Number(value);
+        settings[key] = numeric;
+
+        const cssName = cssVariables[key];
+        if (cssName) {
+          document.documentElement.style.setProperty(
+            cssName,
+            key.endsWith("Size") ? numeric + "px" : String(numeric)
+          );
+        }
+
+        const output = valueElement(key);
+        if (output) {
+          output.value = formatValue(key, numeric);
+          output.textContent = formatValue(key, numeric);
+        }
+      }
+
+      function syncControls() {
+        Object.keys(defaults).forEach(function (key) {
+          const slider = sliderElement(key);
+          const value = Number(settings[key] ?? defaults[key]);
+
+          if (slider) {
+            slider.value = String(value);
+          }
+
+          applySetting(key, value);
+        });
+      }
+
+      function saveSettings() {
+        localStorage.setItem(STORAGE_KEY, JSON.stringify(settings));
+      }
+
+      function openPanel() {
+        panel.hidden = false;
+        document.body.classList.add("text_settings_open");
+        closeButton.focus();
+      }
+
+      function closePanel() {
+        panel.hidden = true;
+        document.body.classList.remove("text_settings_open");
+        openButton.focus();
+      }
+
+      Object.keys(defaults).forEach(function (key) {
+        const slider = sliderElement(key);
+        if (!slider) return;
+
+        slider.addEventListener("input", function () {
+          applySetting(key, slider.value);
+          saveSettings();
+        });
+      });
+
+      openButton.addEventListener("click", openPanel);
+      closeButton.addEventListener("click", closePanel);
+      doneButton.addEventListener("click", closePanel);
+
+      resetButton.addEventListener("click", function () {
+        settings = Object.assign({}, defaults);
+        syncControls();
+        saveSettings();
+      });
+
+      panel.addEventListener("click", function (event) {
+        if (event.target === panel) {
+          closePanel();
+        }
+      });
+
+      document.addEventListener("keydown", function (event) {
+        if (event.key === "Escape" && !panel.hidden) {
+          closePanel();
+        }
+      });
+
+      syncControls();
+    })();
+  </script>
+
+</body>
 </html>

@@ -1,0 +1,375 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="description" content="Login or register for the ConversateProJapanese experimental learning app.">
+  <title>Login · ConversateProJapanese</title>
+  <link rel="stylesheet" href="css/auth.css">
+</head>
+<body>
+  <main class="auth_page">
+    <a class="brand" href="loginregister.html" aria-label="ConversateProJapanese home">
+      <span class="brand_mark" aria-hidden="true">あ</span>
+      <span>ConversateProJapanese</span>
+    </a>
+
+    <section class="auth_shell" aria-labelledby="authTitle">
+      <div class="auth_intro">
+        <p class="eyebrow">Experimental account system</p>
+        <h1 id="authTitle">Learn as different test users.</h1>
+        <p>
+          Register your own usernames and passwords, switch between accounts,
+          and keep each user's conversations separate while you experiment.
+        </p>
+
+        <div class="language_pair" aria-label="Supported language directions">
+          <span>English</span>
+          <span class="arrow" aria-hidden="true">↔</span>
+          <span lang="ja" dir="ltr">日本語</span>
+        </div>
+      </div>
+
+      <div class="auth_card">
+        <div id="sessionPanel" class="session_panel" hidden>
+          <div>
+            <p class="session_label">Currently signed in</p>
+            <strong id="sessionUsername"></strong>
+          </div>
+          <div class="session_actions">
+            <button id="continueButton" class="primary_button compact" type="button">Continue</button>
+            <button id="logoutButton" class="ghost_button compact" type="button">Log out</button>
+          </div>
+        </div>
+
+        <div class="tabs" role="tablist" aria-label="Account actions">
+          <button id="loginTab" class="tab active" type="button" role="tab" aria-selected="true" aria-controls="loginPanel">
+            Login
+          </button>
+          <button id="registerTab" class="tab" type="button" role="tab" aria-selected="false" aria-controls="registerPanel">
+            Register
+          </button>
+        </div>
+
+        <p id="authMessage" class="auth_message" role="status" aria-live="polite"></p>
+
+        <section id="loginPanel" class="panel active" role="tabpanel" aria-labelledby="loginTab">
+          <form id="loginForm" novalidate>
+            <div class="field_group">
+              <label for="loginUsername">Username</label>
+              <input
+                id="loginUsername"
+                name="username"
+                type="text"
+                maxlength="40"
+                autocomplete="username"
+                placeholder="Enter your username"
+                required
+              >
+            </div>
+
+            <div class="field_group">
+              <label for="loginPassword">Password</label>
+              <div class="password_field">
+                <input
+                  id="loginPassword"
+                  name="password"
+                  type="password"
+                  maxlength="100"
+                  autocomplete="current-password"
+                  placeholder="Enter your password"
+                  required
+                >
+                <button class="password_toggle" type="button" data-password-target="loginPassword" aria-label="Show password">Show</button>
+              </div>
+            </div>
+
+            <button id="loginButton" class="primary_button full_width" type="submit">Login</button>
+          </form>
+
+          <p class="switch_copy">
+            New here?
+            <button id="switchToRegister" class="text_button" type="button">Create a test account</button>
+          </p>
+        </section>
+
+        <section id="registerPanel" class="panel" role="tabpanel" aria-labelledby="registerTab" hidden>
+          <form id="registerForm" novalidate>
+            <div class="field_group">
+              <label for="registerName">Name</label>
+              <input
+                id="registerName"
+                name="name"
+                type="text"
+                maxlength="80"
+                autocomplete="name"
+                placeholder="Your display name"
+                required
+              >
+            </div>
+
+            <div class="field_group">
+              <label for="registerEmail">Email</label>
+              <input
+                id="registerEmail"
+                name="email"
+                type="email"
+                maxlength="120"
+                autocomplete="email"
+                placeholder="you@example.com"
+                required
+              >
+            </div>
+
+            <div class="field_group">
+              <label for="registerUsername">Username</label>
+              <input
+                id="registerUsername"
+                name="username"
+                type="text"
+                maxlength="40"
+                autocomplete="username"
+                placeholder="Choose a username"
+                required
+              >
+              <p class="field_hint">3–40 characters. Letters, numbers, underscores and hyphens are easiest to test.</p>
+            </div>
+
+            <div class="field_group">
+              <label for="registerPassword">Password</label>
+              <div class="password_field">
+                <input
+                  id="registerPassword"
+                  name="password"
+                  type="password"
+                  maxlength="100"
+                  autocomplete="new-password"
+                  placeholder="Choose a password"
+                  required
+                >
+                <button class="password_toggle" type="button" data-password-target="registerPassword" aria-label="Show password">Show</button>
+              </div>
+            </div>
+
+            <div class="field_group">
+              <label for="registerPasswordConfirm">Confirm password</label>
+              <div class="password_field">
+                <input
+                  id="registerPasswordConfirm"
+                  name="passwordConfirm"
+                  type="password"
+                  maxlength="100"
+                  autocomplete="new-password"
+                  placeholder="Repeat your password"
+                  required
+                >
+                <button class="password_toggle" type="button" data-password-target="registerPasswordConfirm" aria-label="Show password">Show</button>
+              </div>
+            </div>
+
+            <button id="registerButton" class="primary_button full_width" type="submit">Register</button>
+          </form>
+
+          <p class="switch_copy">
+            Already registered?
+            <button id="switchToLogin" class="text_button" type="button">Login instead</button>
+          </p>
+        </section>
+
+        <p class="experiment_note">
+          This custom password system is intentionally for your private experiment and learning.
+          It is not the security model we would use for a public production app.
+        </p>
+      </div>
+    </section>
+  </main>
+
+  <script type="module">
+    import {
+      registerUser,
+      loginUser,
+      logout,
+      getCurrentUser
+    } from "./js/firebase.js";
+
+    const el = {
+      loginTab: document.getElementById("loginTab"),
+      registerTab: document.getElementById("registerTab"),
+      loginPanel: document.getElementById("loginPanel"),
+      registerPanel: document.getElementById("registerPanel"),
+      loginForm: document.getElementById("loginForm"),
+      registerForm: document.getElementById("registerForm"),
+      loginUsername: document.getElementById("loginUsername"),
+      loginPassword: document.getElementById("loginPassword"),
+      registerName: document.getElementById("registerName"),
+      registerEmail: document.getElementById("registerEmail"),
+      registerUsername: document.getElementById("registerUsername"),
+      registerPassword: document.getElementById("registerPassword"),
+      registerPasswordConfirm: document.getElementById("registerPasswordConfirm"),
+      loginButton: document.getElementById("loginButton"),
+      registerButton: document.getElementById("registerButton"),
+      authMessage: document.getElementById("authMessage"),
+      switchToRegister: document.getElementById("switchToRegister"),
+      switchToLogin: document.getElementById("switchToLogin"),
+      sessionPanel: document.getElementById("sessionPanel"),
+      sessionUsername: document.getElementById("sessionUsername"),
+      continueButton: document.getElementById("continueButton"),
+      logoutButton: document.getElementById("logoutButton")
+    };
+
+    function setMode(mode) {
+      const loginActive = mode === "login";
+
+      el.loginTab.classList.toggle("active", loginActive);
+      el.registerTab.classList.toggle("active", !loginActive);
+      el.loginTab.setAttribute("aria-selected", String(loginActive));
+      el.registerTab.setAttribute("aria-selected", String(!loginActive));
+
+      el.loginPanel.classList.toggle("active", loginActive);
+      el.registerPanel.classList.toggle("active", !loginActive);
+      el.loginPanel.hidden = !loginActive;
+      el.registerPanel.hidden = loginActive;
+
+      clearMessage();
+
+      requestAnimationFrame(() => {
+        (loginActive ? el.loginUsername : el.registerName).focus();
+      });
+    }
+
+    function clearMessage() {
+      el.authMessage.textContent = "";
+      el.authMessage.className = "auth_message";
+    }
+
+    function showMessage(message, type = "error") {
+      el.authMessage.textContent = message || "";
+      el.authMessage.className = "auth_message visible " + type;
+    }
+
+    function setBusy(busy) {
+      el.loginButton.disabled = busy;
+      el.registerButton.disabled = busy;
+      el.loginTab.disabled = busy;
+      el.registerTab.disabled = busy;
+    }
+
+    function refreshSessionPanel() {
+      const current = getCurrentUser();
+      const loggedIn = Boolean(current && current.userId);
+
+      el.sessionPanel.hidden = !loggedIn;
+
+      if (loggedIn) {
+        el.sessionUsername.textContent = current.username || current.name || current.userId;
+      } else {
+        el.sessionUsername.textContent = "";
+      }
+    }
+
+    async function handleLogin(event) {
+      event.preventDefault();
+      clearMessage();
+
+      const username = el.loginUsername.value.trim();
+      const password = el.loginPassword.value;
+
+      if (!username || !password) {
+        showMessage("Enter your username and password.");
+        return;
+      }
+
+      setBusy(true);
+
+      try {
+        const account = await loginUser(username, password);
+        showMessage("Login successful. Opening your conversations…", "success");
+        refreshSessionPanel();
+        window.location.href = "welcome.html";
+      } catch (error) {
+        showMessage(error?.message || "Login failed.");
+      } finally {
+        setBusy(false);
+      }
+    }
+
+    async function handleRegister(event) {
+      event.preventDefault();
+      clearMessage();
+
+      const name = el.registerName.value.trim();
+      const email = el.registerEmail.value.trim();
+      const username = el.registerUsername.value.trim();
+      const password = el.registerPassword.value;
+      const passwordConfirm = el.registerPasswordConfirm.value;
+
+      if (!name || !email || !username || !password || !passwordConfirm) {
+        showMessage("Complete all registration fields.");
+        return;
+      }
+
+      if (username.length < 3) {
+        showMessage("Username must be at least 3 characters.");
+        return;
+      }
+
+      if (password.length < 4) {
+        showMessage("For this experiment, use a password with at least 4 characters.");
+        return;
+      }
+
+      if (password !== passwordConfirm) {
+        showMessage("The two passwords do not match.");
+        return;
+      }
+
+      setBusy(true);
+
+      try {
+        await registerUser({ name, email, username, password });
+        showMessage("Account created. Opening your conversations…", "success");
+        refreshSessionPanel();
+        window.location.href = "welcome.html";
+      } catch (error) {
+        showMessage(error?.message || "Registration failed.");
+      } finally {
+        setBusy(false);
+      }
+    }
+
+    function wirePasswordToggles() {
+      document.querySelectorAll("[data-password-target]").forEach((button) => {
+        button.addEventListener("click", () => {
+          const input = document.getElementById(button.dataset.passwordTarget);
+          if (!input) return;
+
+          const showing = input.type === "text";
+          input.type = showing ? "password" : "text";
+          button.textContent = showing ? "Show" : "Hide";
+          button.setAttribute("aria-label", showing ? "Show password" : "Hide password");
+        });
+      });
+    }
+
+    el.loginTab.addEventListener("click", () => setMode("login"));
+    el.registerTab.addEventListener("click", () => setMode("register"));
+    el.switchToRegister.addEventListener("click", () => setMode("register"));
+    el.switchToLogin.addEventListener("click", () => setMode("login"));
+    el.loginForm.addEventListener("submit", handleLogin);
+    el.registerForm.addEventListener("submit", handleRegister);
+
+    el.continueButton.addEventListener("click", () => {
+      window.location.href = "welcome.html";
+    });
+
+    el.logoutButton.addEventListener("click", () => {
+      logout();
+      refreshSessionPanel();
+      showMessage("You have been logged out.", "success");
+    });
+
+    wirePasswordToggles();
+    refreshSessionPanel();
+  </script>
+</body>
+</html>
